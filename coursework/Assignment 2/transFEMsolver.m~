@@ -1,0 +1,70 @@
+function [x,c,t] = transFEMsolver(X,T,D,lambda,F,c0,BCs)
+% Transient FEM solver.
+% Input arguments are: 
+% X - containing x parameters X.min, X.max, and X.N,
+% T - containing time parameters T.min, T.max and T.N, 
+% D, lambda, F, and c0 - diffusion coeff, linear reaction coeff, and source 
+%                        term; each either scalar 
+%                        or a vector of appropriate length,
+% and BCs (which is a [1x4] vector containing dirchlet at xmin, dirichlet
+% at xmax, neumann at xmin, and neumann at xmax).
+
+%% Initialisation
+% initialise mesh
+mesh = OneDimLinearMeshGen(X.min, X.max, X.N);
+
+% initialise time integration scheme
+th = 1;     % theta = 1 for bkwd Euler, 0 for fwd euler, 0.5 for crank-nic
+dt = (T.max - T.min) / T.N; % time step found from time parameters
+
+% initialise global matrices to zero
+GM = zeros(mesh.ngn, mesh.ngn);     % global matriix
+M = GM;                             % global mass matrix
+K = GM;                             % global stiffness matrix
+GV = zeros(mesh.ngn,1);             % global vector
+
+% define two solution vectors
+Cnext = GV; Ccurrent = Cnext;
+Ccurrent(:,:) = c0;
+
+%% Time Integration Loop
+for t = T.min:dt:T.max      % loop over time from min to max in steps of dt
+    
+    %loop over elements
+    for i = 1:Ne
+        % calculate local element matrices and add to global matrix
+        L = LaplaceElemMatrix(D,i,mesh);
+        R = ReactionElemMatrix(lambda,i,mesh);
+        GM(i:i+1, i:i+1) = GM(i:i+1, i:i+1) + L - R;
+        % calculate local element vectors and add to global vector
+        f(i:i+1) = f(i:i+1) + ElemVector(F,i,mesh);
+    end
+    
+    % apply boundary conditions
+    
+    % first, neumann
+    if ~isnan(BCs(3))   % at xmin
+        f(1) = f(1) - BCs(3);
+    end
+    if ~isnan(BCs(4))   % at xmax
+        f(mesh.ngn) = f(mesh.ngn) + BCs(4);
+    end
+    
+    % then, dirichlet
+    if ~isnan(BCs(1))   % at xmin
+        GM(1,:) = 0;
+        GM(1,1) = 1;
+        f(1) = BCs(1);
+    end
+    if ~isnan(BCs(2))   % at xmax
+        GM(mesh.ngn,:) = 0;
+        GM(mesh.ngn,mesh.ngn) = 1;
+        f(mesh.ngn) = BCs(2);
+    end
+    
+    % solve the final matrix system
+    c = GM \ f;
+    X = mesh.nvec';
+end
+
+end
